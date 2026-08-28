@@ -2,6 +2,7 @@ package eu.kanade.tachiyomi.extension.th.nekopostsefree
 
 import eu.kanade.tachiyomi.network.GET
 import eu.kanade.tachiyomi.network.POST
+import eu.kanade.tachiyomi.source.model.Filter
 import eu.kanade.tachiyomi.source.model.FilterList
 import eu.kanade.tachiyomi.source.model.MangasPage
 import eu.kanade.tachiyomi.source.model.Page
@@ -102,7 +103,23 @@ abstract class NekopostSeFree : KeiSource() {
                 }
             }
             else -> {
-                val body = SearchRequest(cleanQuery, status = 0, paging = PagingInfo(page, SEARCH_PAGE_SIZE))
+                val genreFilter = filters.filterIsInstance<GenreFilter>().firstOrNull()
+                val genreSlug = genreFilter?.takeIf { it.state > 0 && it.state < genreFilter.values.size }?.values?.get(genreFilter.state)?.let(::genreSlugOf)
+                val mediaFilter = filters.filterIsInstance<MediaTypeFilter>().firstOrNull()
+                val projectType = mediaFilter?.takeIf { it.state > 0 && it.state < mediaFilter.values.size }?.values?.get(mediaFilter.state)?.let(::mediaTypeOf)
+                val sortFilter = filters.filterIsInstance<SortFilter>().firstOrNull()
+                val orderBy = sortFilter?.takeIf { it.state > 0 && it.state < sortFilter.values.size }?.values?.get(sortFilter.state)?.let(::orderByOf)
+                val statusFilter = filters.filterIsInstance<StatusFilter>().firstOrNull()
+                val status = statusFilter?.state ?: 0
+
+                val body = SearchRequest(
+                    keyword = cleanQuery,
+                    status = status,
+                    paging = PagingInfo(page, SEARCH_PAGE_SIZE),
+                    projectType = projectType,
+                    genre = genreSlug?.let { listOf(it) },
+                    orderBy = orderBy,
+                )
                 projectRequest("search", body) { resp -> parseProjectList(resp, setOf("m"), true) }
             }
         }
@@ -167,7 +184,82 @@ abstract class NekopostSeFree : KeiSource() {
         }
     }
 
-    override fun getFilterList(data: JsonElement?): FilterList = FilterList()
+    override fun getFilterList(data: JsonElement?): FilterList = FilterList(
+        MediaTypeFilter(),
+        StatusFilter(),
+        GenreFilter(),
+        SortFilter(),
+    )
+
+    private fun genreSlugOf(label: String): String = when (label) {
+        "School Life" -> "school_life"
+        "Slice of Life" -> "slice_of_life"
+        "Sci-fi" -> "sci_fi"
+        "Second Life" -> "second_life"
+        else -> label
+    }
+
+    private fun mediaTypeOf(label: String): String = when (label) {
+        "Manga" -> "m"
+        "Comic" -> "c"
+        "Novel" -> "n"
+        else -> "m"
+    }
+
+    private fun orderByOf(label: String): String = when (label) {
+        "Latest Update" -> "updateDate"
+        "Newest" -> "createDesc"
+        "Random" -> "random"
+        else -> "updateDate"
+    }
+
+    private class GenreFilter :
+        Filter.Select<String>(
+            "Genre",
+            arrayOf(
+                "All",
+                "Isekai",
+                "Fantasy",
+                "Romance",
+                "School Life",
+                "Shounen",
+                "Shoujo",
+                "Mystery",
+                "Action",
+                "Comedy",
+                "Drama",
+                "Horror",
+                "Seinen",
+                "Harem",
+                "Slice of Life",
+                "Adventure",
+                "Sport",
+                "Sci-fi",
+                "Yaoi",
+                "Yuri",
+                "Gourmet",
+                "Second Life",
+                "Trap",
+            ),
+        )
+
+    private class StatusFilter :
+        Filter.Select<String>(
+            "Status",
+            arrayOf("All", "Ongoing", "Completed"),
+        )
+
+    private class MediaTypeFilter :
+        Filter.Select<String>(
+            "Media Type",
+            arrayOf("All", "Manga", "Comic", "Novel"),
+        )
+
+    private class SortFilter :
+        Filter.Select<String>(
+            "Sort",
+            arrayOf("Default", "Latest Update", "Newest", "Random"),
+        )
 
     private suspend inline fun <reified B, reified T> projectRequest(
         endpoint: String,
@@ -248,7 +340,14 @@ abstract class NekopostSeFree : KeiSource() {
 internal data class PagingInfo(val pageNo: Int, val pageSize: Int)
 
 @Serializable
-internal data class SearchRequest(val keyword: String, val status: Int, val paging: PagingInfo)
+internal data class SearchRequest(
+    val keyword: String,
+    val status: Int,
+    val paging: PagingInfo,
+    val projectType: String? = null,
+    val genre: List<String>? = null,
+    val orderBy: String? = null,
+)
 
 @Serializable
 internal data class UpdatesRequest(val type: String, val paging: PagingInfo)
