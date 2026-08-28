@@ -11,6 +11,7 @@ import eu.kanade.tachiyomi.util.asJsoup
 import keiyoushi.annotation.Source
 import keiyoushi.source.KeiSource
 import kotlinx.serialization.json.JsonElement
+import okhttp3.HttpUrl.Companion.toHttpUrlOrNull
 import org.jsoup.nodes.Document
 
 @Source
@@ -26,7 +27,12 @@ abstract class Hentaithai : KeiSource() {
         resp.use { return it.asJsoup() }
     }
 
-    private fun pathOf(absHref: String): String = absHref.removePrefix(baseUrl).substringBeforeLast("#")
+    private fun pathOf(absHref: String): String {
+        val httpUrl = absHref.toHttpUrlOrNull() ?: return absHref
+        return httpUrl.encodedPath + (httpUrl.encodedQuery?.let { "?$it" } ?: "")
+    }
+
+    private fun absolute(path: String): String = if (path.startsWith("http")) path else "$baseUrl$path"
 
     // Latest: the homepage grid, paginated by /page-N
     override suspend fun getLatestUpdates(page: Int): MangasPage {
@@ -83,7 +89,7 @@ abstract class Hentaithai : KeiSource() {
         fetchChapters: Boolean,
     ): SMangaUpdate {
         val url = manga.url
-        val doc = getDocument("$baseUrl$url")
+        val doc = getDocument(absolute(url))
         val details = if (fetchDetails) parseTopicManga(doc, url) else manga
         val fetched = if (fetchChapters) {
             listOf(
@@ -109,7 +115,7 @@ abstract class Hentaithai : KeiSource() {
     }
 
     override suspend fun getPageList(chapter: SChapter): List<Page> {
-        val doc = getDocument("$baseUrl${chapter.url}")
+        val doc = getDocument(absolute(chapter.url))
         return pageImages(doc).mapIndexed { index, url ->
             Page(index, imageUrl = url)
         }
