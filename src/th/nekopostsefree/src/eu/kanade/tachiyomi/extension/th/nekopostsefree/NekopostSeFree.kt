@@ -175,13 +175,25 @@ abstract class NekopostSeFree : KeiSource() {
     }
 
     override suspend fun getPageList(chapter: SChapter): List<Page> {
-        val info = client.newCall(GET("$fileHost/collectManga/${chapter.url}", headers)).execute().use {
-            json.decodeFromString<RawChapterInfo>(it.body?.string().orEmpty())
+        // osemocphoto is migrating chapters from www. -> fs.; each chapter's manifest
+        // and images live on ONE host right now, the other returns a placeholder JPEG.
+        val hosts = listOf("https://www.osemocphoto.com", "https://fs.osemocphoto.com")
+        for (host in hosts) {
+            val body = try {
+                client.newCall(GET("$host/collectManga/${chapter.url}", headers)).execute().use { it.body?.string().orEmpty() }
+            } catch (e: Exception) {
+                continue
+            }
+            if (body.isBlank() || !body.startsWith("{")) continue
+            runCatching {
+                val info = json.decodeFromString<RawChapterInfo>(body)
+                val base = "$host/collectManga/${info.projectId}/${info.chapterId}"
+                return info.pageItem.mapIndexed { index, page ->
+                    Page(index = index, imageUrl = "$base/${page.pageName ?: page.fileName}")
+                }
+            }
         }
-        val base = "$fileHost/collectManga/${info.projectId}/${info.chapterId}"
-        return info.pageItem.map { page ->
-            Page(index = page.pageNo, imageUrl = "$base/${page.pageName ?: page.fileName}")
-        }
+        return emptyList()
     }
 
     override fun getFilterList(data: JsonElement?): FilterList = FilterList(
@@ -425,7 +437,6 @@ internal data class RawChapterInfo(
 internal data class RawPageItem(
     @SerialName("pageName") val pageName: String? = null,
     @SerialName("fileName") val fileName: String? = null,
-    @SerialName("pageNo") val pageNo: Int,
 )
 
 @Serializable
