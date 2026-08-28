@@ -28,7 +28,7 @@ abstract class NekopostSeFree : KeiSource() {
 
     override val supportsLatest: Boolean = true
 
-    private val projectDataEndpoint = "$baseUrl/api/project/detail2"
+    private val projectDataEndpoint = "/api/project/detail2"
     private val fileHost = "https://www.osemocphoto.com"
 
     private val dateFormat by lazy { SimpleDateFormat("yyyy-MM-dd HH:mm:ss", Locale("th")) }
