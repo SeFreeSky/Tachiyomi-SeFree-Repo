@@ -7,174 +7,238 @@ import eu.kanade.tachiyomi.source.model.MangasPage
 import eu.kanade.tachiyomi.source.model.Page
 import eu.kanade.tachiyomi.source.model.SChapter
 import eu.kanade.tachiyomi.source.model.SManga
-import eu.kanade.tachiyomi.source.model.SMangaUpdate
+import eu.kanade.tachiyomi.source.online.HttpSource
 import eu.kanade.tachiyomi.util.asJsoup
 import keiyoushi.annotation.Source
-import keiyoushi.source.KeiSource
-import keiyoushi.utils.firstInstanceOrNull
-import kotlinx.serialization.json.JsonElement
+import okhttp3.OkHttpClient
 import okhttp3.Request
+import okhttp3.Response
 import java.net.URLEncoder
+import kotlin.time.Duration.Companion.minutes
 
 @Source
-abstract class MikuDoujinSeFree : KeiSource() {
+class MikuDoujinSeFree(
+    override val lang: String,
+    override val id: Long,
+) : HttpSource() {
 
-    override val supportsLatest: Boolean = true
+    override val name = "Miku-Doujin-SeFree"
 
-    override suspend fun getPopularManga(page: Int): MangasPage = fetchBrowsePage(page)
+    override val baseUrl = "https://miku-doujin.com"
 
-    override suspend fun getLatestUpdates(page: Int): MangasPage = fetchBrowsePage(page)
+    override val supportsLatest = true
 
-    override suspend fun getSearchMangaList(page: Int, query: String, filters: FilterList): MangasPage {
-        val genre = filters.firstInstanceOrNull<GenreFilter>()?.toUriPart() ?: ""
-        return if (query.isNotBlank()) {
-            fetchMangasPage(GET("$baseUrl/search/?keyword=${encodeQuery(query)}", headers), paginated = false)
-        } else if (genre.isNotBlank()) {
-            val url = if (page <= 1) "$baseUrl/genre/${encodePath(genre)}/" else "$baseUrl/genre/${encodePath(genre)}/?page=$page"
-            fetchMangasPage(GET(url, headers), paginated = true)
-        } else {
-            fetchBrowsePage(page)
+    override val client: OkHttpClient = network.client.newBuilder()
+        .connectTimeout(1.minutes)
+        .readTimeout(1.minutes)
+        .writeTimeout(1.minutes)
+        .build()
+
+    // The site serves HTTP 404 for any manga/episode path that does not end in '/'.
+    // Keep a trailing slash on every scraped URL so chapter/reader requests resolve.
+    private fun withSlash(url: String): String = if (url.endsWith("/")) url else "$url/"
+
+    // Popular == Latest on this site (home is always newest-first)
+    override fun popularMangaRequest(page: Int): Request = latestUpdatesRequest(page)
+
+    override fun popularMangaParse(response: Response): MangasPage = latestUpdatesParse(response)
+
+    override fun latestUpdatesRequest(page: Int): Request = GET("$baseUrl/?page=$page", headers)
+
+    override fun latestUpdatesParse(response: Response): MangasPage {
+        val document = response.asJsoup()
+        val mangas = document.select("div.col-6.inz-col").mapNotNull { element ->
+            val a = element.selectFirst("a") ?: return@mapNotNull null
+            SManga.create().apply {
+                setUrlWithoutDomain(a.attr("href"))
+                url = withSlash(url)
+                title = a.selectFirst("div.inz-title")?.text() ?: ""
+                thumbnail_url = a.selectFirst("img")?.attr("abs:src")
+                initialized = false
+            }
         }
+        val hasNextPage = document.selectFirst("button.btn-secondary") != null
+        return MangasPage(mangas, hasNextPage)
     }
 
-    /** No separate "popular" list exists; the homepage (latest additions) is the general list. */
-    private suspend fun fetchBrowsePage(page: Int): MangasPage {
-        val url = if (page <= 1) "$baseUrl/" else "$baseUrl/?page=$page"
-        return fetchMangasPage(GET(url, headers), paginated = true)
+    private class GenreFilter :
+        Filter.Select<String>(
+            "Genre",
+            arrayOf(
+                "All",
+                "Ahegao",
+                "Yaoi",
+                "Yuri",
+                "NTR",
+                "SM",
+                "Uncensored",
+                "ครอบครัว",
+                "คอมดี้",
+                "ซิสเตอร์",
+                "ดราม่า",
+                "ตำรวจ",
+                "นมปานกลาง",
+                "นมเล็ก",
+                "นมใหญ่",
+                "นักเรียน",
+                "บังคับ",
+                "ปีศาจ นางฟ้า แวมไพร์",
+                "ผี-ซอมบี้",
+                "พยาบาล",
+                "พี่สาว น้องสาว",
+                "ฟุตะนาริ",
+                "ภาพสี",
+                "มิโกะ",
+                "ลักหลับ",
+                "สลับร่าง ชาย หญิง",
+                "สะกดจิต",
+                "สาวกีฬา",
+                "สาวดุ้น",
+                "สาวผิวแทน",
+                "สาวมอนสเตอร์",
+                "สาวหูสัตว์",
+                "สาวออฟฟิศ",
+                "สาวเกล",
+                "สาวแว่น",
+                "สาวใหญ่/แม่บ้าน",
+                "หนวด-สัตว์",
+                "หยุดเวลา",
+                "อาจารย์",
+                "ฮาร์ดคอร์",
+                "ฮาเร็ม",
+                "เมด สาวใช้ สาวคาเฟ่",
+                "เอลฟ์",
+                "แฟนตาซี",
+                "โซ",
+                "โดนรุม",
+                "โรแมนติก",
+                "โล",
+                "ไอดอล",
+            ),
+        )
+
+    private class CategoryFilter :
+        Filter.Select<String>(
+            "Category",
+            arrayOf("All", "โดจิน แปลไทย"),
+        )
+
+    override fun getFilterList(): FilterList = FilterList(
+        GenreFilter(),
+        CategoryFilter(),
+    )
+
+    // Same special-case as the reference source: URL-encoding the '/' in this genre
+    // slug breaks the route, so it must be sent verbatim.
+    private fun genreSlug(name: String): String = if (name != "สาวใหญ่/แม่บ้าน") {
+        URLEncoder.encode(name, "UTF-8")
+    } else {
+        name
     }
 
-    override suspend fun fetchMangaUpdate(
-        manga: SManga,
-        chapters: List<SChapter>,
-        fetchDetails: Boolean,
-        fetchChapters: Boolean,
-    ): SMangaUpdate {
-        val updatedManga = if (fetchDetails) fetchDetails(manga) else manga
-        val updatedChapters = if (fetchChapters) fetchChapters(manga) else chapters
-        return SMangaUpdate(manga = updatedManga, chapters = updatedChapters)
+    override fun searchMangaRequest(page: Int, query: String, filters: FilterList): Request {
+        if (query.startsWith("http")) {
+            return GET(query, headers)
+        }
+
+        val genre = filters.filterIsInstance<GenreFilter>().firstOrNull()?.state
+        val category = filters.filterIsInstance<CategoryFilter>().firstOrNull()?.state
+
+        val genreName = if (genre != null && genre > 0) {
+            filters.filterIsInstance<GenreFilter>().first().values[genre]
+        } else {
+            null
+        }
+        val categoryName = if (category != null && category > 0) {
+            filters.filterIsInstance<CategoryFilter>().first().values[category]
+        } else {
+            null
+        }
+
+        if (genreName != null) {
+            return GET("$baseUrl/genre/${genreSlug(genreName)}/?page=$page", headers)
+        }
+        if (categoryName != null) {
+            return GET("$baseUrl/category/${URLEncoder.encode(categoryName, "UTF-8")}/?page=$page", headers)
+        }
+        if (query.isNotBlank()) {
+            return GET("$baseUrl/genre/${genreSlug(query)}/?page=$page", headers)
+        }
+        return GET("$baseUrl/?page=$page", headers)
     }
 
-    private suspend fun fetchDetails(manga: SManga): SManga {
-        val document = client.newCall(GET(baseUrl + manga.url, headers)).execute().use { it.asJsoup() }
+    override fun searchMangaParse(response: Response): MangasPage = latestUpdatesParse(response)
+
+    override fun mangaDetailsParse(response: Response): SManga {
+        val document = response.asJsoup()
+        val infoElement = document.selectFirst("div.sr-card-body") ?: return SManga.create()
+
         return SManga.create().apply {
-            title = document.selectFirst(".card-header b")?.text() ?: manga.title
-            thumbnail_url = document.selectFirst("div.sr-card-body img.img-thumbnail")?.attr("abs:src")
-                ?: document.selectFirst("img[src*=/uploads/thumbnail/]")?.attr("abs:src")
-            artist = document.selectFirst("a[href*=/artist/]")?.text()
-            author = artist
-            genre = document.select("a[href*=/genre/]").joinToString { it.text() }
-            description = manga.description.orEmpty().ifBlank { "" }
-            status = SManga.UNKNOWN
+            title = document.title()
+            author = infoElement.select("div.col-md-8 p a.badge-secondary").getOrNull(2)?.ownText()
+            artist = author
+            genre = infoElement.select("div.col-md-8 div.tags a").joinToString { it.text() }
+            description = infoElement.selectFirst("div.col-md-8")?.ownText()
+            thumbnail_url = infoElement.selectFirst("div.col-md-4 img")?.attr("abs:src")
+
+            val tableEpisodes = document.select("table.table-episode tr td a")
+            status = if (tableEpisodes.isEmpty()) {
+                SManga.COMPLETED
+            } else {
+                val hasEnd = tableEpisodes.any { it.text().split(" ").last() == "จบ" }
+                if (hasEnd) SManga.COMPLETED else SManga.UNKNOWN
+            }
             initialized = true
         }
     }
 
-    /** Some doujin are multi-episode; they expose a `table.table-episode`. Otherwise it's a single chapter holding all pages on the detail page. */
-    private suspend fun fetchChapters(manga: SManga): List<SChapter> {
-        val document = client.newCall(GET(baseUrl + manga.url, headers)).execute().use { it.asJsoup() }
+    override fun chapterListParse(response: Response): List<SChapter> {
+        val document = response.asJsoup()
         val elements = document.select("table.table-episode tr")
+
         if (elements.isEmpty()) {
+            // Single-chapter doujin: reader is inline on the manga page. Only expose a
+            // chapter when the page actually carries reader images; entries without a
+            // reader (new/seed listings) get NO chapter instead of a dead chapter whose
+            // reader would be empty.
+            val hasReader = document.selectFirst("div#v-pills-tabContent") != null
+            if (!hasReader) {
+                return emptyList()
+            }
             return listOf(
                 SChapter.create().apply {
-                    url = manga.url
+                    url = withSlash(response.request.url.encodedPath)
                     name = "Chapter 1"
-                    chapter_number = 1f
+                    chapter_number = 1.0f
                 },
             )
         }
+
         return elements.mapIndexedNotNull { idx, element ->
             val a = element.selectFirst("td a") ?: return@mapIndexedNotNull null
-            val url = a.attr("abs:href").removePrefix(baseUrl)
-            if (url.isEmpty()) return@mapIndexedNotNull null
             SChapter.create().apply {
-                this.url = url
+                setUrlWithoutDomain(a.attr("href"))
+                url = withSlash(url)
                 name = a.text()
-                chapter_number = a.text().split(" ").lastOrNull()?.toFloatOrNull() ?: (idx + 1).toFloat()
-            }
-        }
-    }
-
-    private fun fetchMangasPage(request: Request, paginated: Boolean): MangasPage {
-        val document = client.newCall(request).execute().use { it.asJsoup() }
-        val mangas = document.select(".inz-col").distinctBy { it.selectFirst("a.inz-a")?.attr("abs:href") }
-            .mapNotNull { col ->
-                val link = col.selectFirst("a.inz-a") ?: return@mapNotNull null
-                val url = link.attr("abs:href").removePrefix(baseUrl)
-                if (url.isEmpty()) return@mapNotNull null
-                SManga.create().apply {
-                    this.url = url
-                    title = link.selectFirst(".inz-title")?.text() ?: link.attr("title").orEmpty()
-                    thumbnail_url = link.selectFirst("img.inz-img-thumbnail")?.attr("abs:src")
+                chapter_number = if (name.isEmpty()) {
+                    0.0f
+                } else {
+                    name.split(" ").last().toFloatOrNull() ?: (idx + 1).toFloat()
                 }
             }
-        val hasNextPage = paginated && mangas.size >= 12
-        return MangasPage(mangas, hasNextPage)
-    }
-
-    override suspend fun getPageList(chapter: SChapter): List<Page> {
-        val document = client.newCall(GET(baseUrl + chapter.url, headers)).execute().use { it.asJsoup() }
-        val images = document.select("#v-pills-tabContent img.lazy, #v-pills-tabContent img.page-img, #manga-content img[data-src]")
-            .distinctBy { img -> img.absUrl("data-src").ifEmpty { img.absUrl("src") } }
-        return images.mapIndexedNotNull { i, img ->
-            val src = img.absUrl("data-src").ifEmpty { img.absUrl("src") }
-            if (src.isEmpty()) return@mapIndexedNotNull null
-            Page(i, src)
         }
     }
 
-    override fun getFilterList(data: JsonElement?): FilterList = FilterList(
-        GenreFilter(GENRE_TITLE, GENRES),
-    )
-
-    private fun encodePath(s: String) = URLEncoder.encode(s, "UTF-8").replace("+", "%20")
-
-    private fun encodeQuery(s: String) = URLEncoder.encode(s, "UTF-8")
-
-    companion object {
-        private const val GENRE_TITLE = "Genre"
-        private val GENRES = listOf(
-            "Ahegao" to "Ahegao",
-            "NTR" to "NTR",
-            "SM" to "SM",
-            "Uncensored" to "Uncensored",
-            "Yaoi" to "Yaoi",
-            "Yuri" to "Yuri",
-            "ครอบครัว" to "ครอบครัว",
-            "คอมดี้" to "คอมดี้",
-            "ซิสเตอร์" to "ซิสเตอร์",
-            "ดราม่า" to "ดราม่า",
-            "ตำรวจ" to "ตำรวจ",
-            "นมปานกลาง" to "นมปานกลาง",
-            "นมเล็ก" to "นมเล็ก",
-            "นมใหญ่" to "นมใหญ่",
-            "นักเรียน" to "นักเรียน",
-            "บังคับ" to "บังคับ",
-            "ภาพสี" to "ภาพสี",
-            "มิโกะ" to "มิโกะ",
-            "ลักหลับ" to "ลักหลับ",
-            "สะกดจิต" to "สะกดจิต",
-            "สาวกีฬา" to "สาวกีฬา",
-            "สาวผิวแทน" to "สาวผิวแทน",
-            "สาวหูสัตว์" to "สาวหูสัตว์",
-            "สาวออฟฟิศ" to "สาวออฟฟิศ",
-            "สาวแว่น" to "สาวแว่น",
-            "หนวด-สัตว์" to "หนวด-สัตว์",
-            "หยุดเวลา" to "หยุดเวลา",
-            "อาจารย์" to "อาจารย์",
-            "ฮาร์ดคอร์" to "ฮาร์ดคอร์",
-            "ฮาเร็ม" to "ฮาเร็ม",
-            "เอลฟ์" to "เอลฟ์",
-            "แฟนตาซี" to "แฟนตาซี",
-            "โดนรุม" to "โดนรุม",
-            "โรแมนติก" to "โรแมนติก",
-            "โล" to "โล",
-            "ไอดอล" to "ไอดอล",
-        )
+    override fun pageListParse(response: Response): List<Page> {
+        val document = response.asJsoup()
+        val query = "div#v-pills-tabContent img.lazy, div#v-pills-tabContent img.page-img"
+        return document.select(query)
+            .distinctBy { it.attr("abs:data-src").ifEmpty { it.attr("abs:src") } }
+            .mapIndexedNotNull { index, img ->
+                val url = if (img.hasAttr("data-src")) img.attr("abs:data-src") else img.attr("abs:src")
+                if (url.isBlank()) null else Page(index, imageUrl = url)
+            }
     }
-}
 
-private open class UriPartFilter(displayName: String, private val vals: List<Pair<String, String>>, state: Int = 0) : Filter.Select<String>(displayName, vals.map { it.first }.toTypedArray(), state) {
-    fun toUriPart() = vals[state].second
+    override fun imageUrlParse(response: Response): String = throw UnsupportedOperationException()
 }
-
-private class GenreFilter(title: String, vals: List<Pair<String, String>>) : UriPartFilter(title, listOf("All" to "") + vals)

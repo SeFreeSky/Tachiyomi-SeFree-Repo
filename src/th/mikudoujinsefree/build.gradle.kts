@@ -6,9 +6,9 @@ plugins {
 
 keiyoushi {
     name = "Miku-Doujin-SeFree"
-    versionCode = 2
+    versionCode = 4
     contentWarning = ContentWarning.NSFW
-    libVersion = "1.6"
+    libVersion = "1.4"
 
     source {
         lang = "th"
