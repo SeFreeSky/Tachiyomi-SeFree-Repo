@@ -121,13 +121,19 @@ abstract class Hentaithai : KeiSource() {
         }
     }
 
-    // The reader is inline on the topic page: every /thai/... webp rendered as an <img>.
-    private fun pageImages(doc: Document): List<String> = doc.select("img[src*=\"/thai/\"]")
+    // The reader is inline on the topic page. Two gallery layouts exist: older doujin
+    // use s1.hentaithai.net/thai/<y>/<d>/<id>/N.webp, newer use s1.hentaithai.net/image/<y>/<d>/<slug>.jpg.
+    // Exclude UI images (favicon/credit/sticker/bw-toggle) that live under /image/other|credit|sticker.
+    private fun pageImages(doc: Document): List<String> = doc.select("img[src]")
         .mapNotNull { img ->
             val src = img.attr("abs:src")
-            if (src.isNotBlank() && src.contains("hentaithai.net/thai/")) src else null
+            val isThai = src.contains("hentaithai.net/thai/")
+            val isImage = src.contains("hentaithai.net/image/") && !isUiImage(src)
+            if (isThai || isImage) src else null
         }
         .distinct()
+
+    private fun isUiImage(src: String): Boolean = src.contains("/other/") || src.contains("/credit/") || src.contains("/sticker/")
 
     override fun getFilterList(data: JsonElement?): FilterList = FilterList()
 
