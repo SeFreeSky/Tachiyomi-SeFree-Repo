@@ -1,5 +1,6 @@
 package eu.kanade.tachiyomi.extension.th.rommangasefree
 
+import android.util.Log
 import eu.kanade.tachiyomi.network.GET
 import eu.kanade.tachiyomi.source.model.Filter
 import eu.kanade.tachiyomi.source.model.FilterList
@@ -16,6 +17,7 @@ import kotlinx.serialization.Serializable
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.JsonElement
 import okhttp3.Request
+import org.jsoup.Jsoup
 import java.net.URLEncoder
 import java.text.SimpleDateFormat
 import java.util.Calendar
@@ -130,13 +132,24 @@ abstract class RomMangaSeFree : KeiSource() {
     }
 
     override suspend fun getPageList(chapter: SChapter): List<Page> {
-        val document = client.newCall(GET(baseUrl + chapter.url, headers)).execute().use { it.asJsoup() }
-        val jsonText = extractBalancedJson(document.html(), "ts_reader.run(")
+        Log.d(TAG, "getPageList chapter.url=${chapter.url}")
+        val resp = client.newCall(GET(baseUrl + chapter.url, headers)).execute()
+        val html = resp.use {
+            Log.d(TAG, "http=${it.code} len=${it.body?.contentLength() ?: -1}")
+            it.body?.string().orEmpty()
+        }
+        val document = Jsoup.parse(html)
+        val hasTs = "ts_reader.run(" in html
+        Log.d(TAG, "hasTsReader=$hasTs htmlLen=${html.length}")
+        val jsonText = extractBalancedJson(html, "ts_reader.run(")
         val images = jsonText?.let {
             runCatching { json.decodeFromString<TsReader>(it).sources.flatMap { s -> s.images } }.getOrNull()
         }.orEmpty()
+        Log.d(TAG, "images=${images.size} firsts=${images.take(3)}")
         return if (images.isEmpty()) {
-            document.select("img[src*=img.rom-manga.com]").mapIndexed { i, img -> Page(i, img.attr("abs:src")) }
+            val fallback = document.select("img[src*=img.rom-manga.com]").mapIndexed { i, img -> Page(i, img.attr("abs:src")) }
+            Log.d(TAG, "fallback pages=${fallback.size}")
+            fallback
         } else {
             images.mapIndexed { i, url -> Page(i, url) }
         }
@@ -183,6 +196,7 @@ abstract class RomMangaSeFree : KeiSource() {
     }
 
     companion object {
+        private const val TAG = "RomMangaSeFree"
         private val dateFormat: SimpleDateFormat by lazy {
             SimpleDateFormat("MMMM d, yyyy", Locale("th", "TH"))
         }
