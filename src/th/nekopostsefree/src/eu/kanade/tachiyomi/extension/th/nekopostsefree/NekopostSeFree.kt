@@ -28,6 +28,12 @@ abstract class NekopostSeFree : KeiSource() {
 
     override val supportsLatest: Boolean = true
 
+    // J2K's "open in browser" builds these; manga.url is just the numeric pid, so the
+    // /manga/ path segment must be added or it opens www.nekopost.net<pid> (DNS error).
+    override fun getMangaUrl(manga: SManga): String = "$baseUrl/manga/${manga.url}"
+
+    override fun getChapterUrl(chapter: SChapter): String = "$baseUrl/manga/${chapter.url.substringBefore("/")}/${chapter.chapter_number.toString().removeSuffix(".0")}"
+
     private val projectDataEndpoint = "/api/project/detail2"
     private val fileHost = "https://www.osemocphoto.com"
 
@@ -161,7 +167,7 @@ abstract class NekopostSeFree : KeiSource() {
             info.projectInfo.chapter.orEmpty().map {
                 SChapter.create().apply {
                     url = "${p.projectId}/${it.chapterId}/${p.projectId}_${it.chapterId}.json"
-                    name = it.chapterName
+                    name = it.chapterName.take(MAX_CHAPTER_NAME)
                     chapter_number = it.chapterNo.toFloat()
                     date_upload = dateFormat.parse(it.publishDate.value)?.time ?: 0L
                     scanlator = it.providerName
@@ -339,6 +345,7 @@ abstract class NekopostSeFree : KeiSource() {
         private const val POPULAR_PAGE_SIZE = 15
         private const val LATEST_PAGE_SIZE = 15
         private const val SEARCH_PAGE_SIZE = 100
+        private const val MAX_CHAPTER_NAME = 80
         private val json = Json {
             ignoreUnknownKeys = true
             coerceInputValues = true
