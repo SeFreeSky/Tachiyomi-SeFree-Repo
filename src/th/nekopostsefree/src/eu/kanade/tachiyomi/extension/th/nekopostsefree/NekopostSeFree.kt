@@ -301,7 +301,7 @@ abstract class NekopostSeFree : KeiSource() {
         initialized = true
     }
 
-    private fun parseProjectList(
+    private suspend fun parseProjectList(
         resp: Response,
         filterTypes: Set<String>?,
         isPaginated: Boolean,
@@ -324,9 +324,19 @@ abstract class NekopostSeFree : KeiSource() {
         return MangasPage(mangaList, isPaginated && mangaList.size == SEARCH_PAGE_SIZE)
     }
 
-    private fun buildCoverUrl(projectId: String, coverVersion: Int?): String {
-        val base = "$fileHost/collectManga/$projectId/${projectId}_cover.jpg"
-        return if (coverVersion != null) "$base?ver=$coverVersion" else base
+    private suspend fun buildCoverUrl(projectId: String, coverVersion: Int?): String {
+        val suffix = if (coverVersion != null) "?ver=$coverVersion" else ""
+        val www = "$fileHost/collectManga/$projectId/${projectId}_cover.jpg$suffix"
+        // Covers migrated www -> fs (like manifests). www serves a fixed placeholder
+        // for migrated manga; if present, use the fs host where the real cover lives.
+        val wwwLen = runCatching {
+            client.newCall(GET(www, headers)).execute().use { it.body?.contentLength() ?: -1L }
+        }.getOrDefault(-1L)
+        return if (wwwLen == COVER_PLACEHOLDER_LEN) {
+            "https://fs.osemocphoto.com/collectManga/$projectId/${projectId}_cover.jpg$suffix"
+        } else {
+            www
+        }
     }
 
     private suspend inline fun <reified T> post(
@@ -346,6 +356,7 @@ abstract class NekopostSeFree : KeiSource() {
         private const val LATEST_PAGE_SIZE = 15
         private const val SEARCH_PAGE_SIZE = 100
         private const val MAX_CHAPTER_NAME = 80
+        private const val COVER_PLACEHOLDER_LEN = 24375L
         private val json = Json {
             ignoreUnknownKeys = true
             coerceInputValues = true
