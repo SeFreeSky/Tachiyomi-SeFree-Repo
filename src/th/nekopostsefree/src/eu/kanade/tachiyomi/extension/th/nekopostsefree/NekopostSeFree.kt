@@ -167,7 +167,7 @@ abstract class NekopostSeFree : KeiSource() {
             info.projectInfo.chapter.orEmpty().map {
                 SChapter.create().apply {
                     url = "${p.projectId}/${it.chapterId}/${p.projectId}_${it.chapterId}.json"
-                    name = it.chapterName.take(MAX_CHAPTER_NAME)
+                    name = sanitizeChapterName(it.chapterName)
                     chapter_number = it.chapterNo.toFloat()
                     date_upload = dateFormat.parse(it.publishDate.value)?.time ?: 0L
                     scanlator = it.providerName
@@ -355,11 +355,31 @@ abstract class NekopostSeFree : KeiSource() {
         private const val POPULAR_PAGE_SIZE = 15
         private const val LATEST_PAGE_SIZE = 15
         private const val SEARCH_PAGE_SIZE = 100
-        private const val MAX_CHAPTER_NAME = 80
+
+        // Filesystems limit path components by BYTES, not chars (a Thai char is 3 bytes).
+        // 80 Thai chars can be ~240 bytes, which blows past the on-disk limit and makes
+        // J2K's download dir resolve to null -> UniFile.listFiles() NullPointerException.
+        // So cap by UTF-8 byte length and strip filesystem-hostile chars.
+        private const val MAX_CHAPTER_BYTES = 80
         private const val COVER_PLACEHOLDER_LEN = 24375L
         private val json = Json {
             ignoreUnknownKeys = true
             coerceInputValues = true
+        }
+
+        /** Strip path-hostile chars, then cap the UTF-8 byte length so the download
+         *  directory component stays safely below the filesystem limit. */
+        private fun sanitizeChapterName(raw: String): String {
+            val cleaned = raw.replace(Regex("""[\\/:*?"<>|\u0000-\u001f]"""), "")
+            val sb = StringBuilder()
+            var bytes = 0
+            for (c in cleaned) {
+                val cb = c.toString().toByteArray(Charsets.UTF_8).size
+                if (bytes + cb > MAX_CHAPTER_BYTES) break
+                sb.append(c)
+                bytes += cb
+            }
+            return sb.toString().ifBlank { "Chapter" }
         }
     }
 }
