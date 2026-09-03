@@ -146,6 +146,22 @@ abstract class RomMangaSeFree : KeiSource() {
             runCatching { json.decodeFromString<TsReader>(it).sources.flatMap { s -> s.images } }.getOrNull()
         }.orEmpty()
         Log.d(TAG, "images=${images.size} firsts=${images.take(3)}")
+        // Diagnostic: fetch the FIRST image with the app's own OkHttp client to see
+        // whether OkHttp actually reaches the host (Cloudflare/JA3 challenge would show
+        // 403/503 or an HTML "challenge" body instead of JPEG ffd8 bytes).
+        images.firstOrNull()?.let { first ->
+            try {
+                val imgResp = client.newCall(GET(first, headers)).execute()
+                imgResp.use {
+                    val head = it.peekBody(96).string().take(24).replace('\n', ' ').replace('\r', ' ')
+                    val ct = it.header("Content-Type").orEmpty()
+                    val len = it.body?.contentLength() ?: -1
+                    Log.d(TAG, "imgProbe code=${it.code} ct=$ct len=$len head0=$head")
+                }
+            } catch (e: Exception) {
+                Log.d(TAG, "imgProbe EXC ${e.javaClass.simpleName}: ${e.message?.take(120)}")
+            }
+        }
         return if (images.isEmpty()) {
             val fallback = document.select("img[src*=img.rom-manga.com]").mapIndexed { i, img -> Page(i, img.attr("abs:src")) }
             Log.d(TAG, "fallback pages=${fallback.size}")
