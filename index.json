@@ -1,0 +1,116 @@
+{
+  "name": "SeFree",
+  "badgeLabel": "SF",
+  "signingKey": "a7c48f32e3ecf213a1a4fe834e1b30153c5ce47b05c9dd630c48dadb7569ced1",
+  "contact": {
+    "website": "https://raw.githubusercontent.com/SeFreeSky/Tachiyomi-SeFree-Repo/repo"
+  },
+  "extensionList": {
+    "extensions": [
+      {
+        "name": "HentaiThai-SeFree",
+        "packageName": "eu.kanade.tachiyomi.extension.th.hentaithai",
+        "resources": {
+          "apkUrl": "https://raw.githubusercontent.com/SeFreeSky/Tachiyomi-SeFree-Repo/repo/tachiyomi-th.hentaithai-v1.6.3.apk",
+          "iconUrl": "https://raw.githubusercontent.com/SeFreeSky/Tachiyomi-SeFree-Repo/main/core/src/main/res/mipmap-xhdpi/ic_launcher.png",
+          "jarUrl": "https://raw.githubusercontent.com/SeFreeSky/Tachiyomi-SeFree-Repo/repo/tachiyomi-th.hentaithai-v1.6.3.jar"
+        },
+        "extensionLib": "1.6",
+        "versionCode": "3",
+        "versionName": "1.6.3",
+        "contentWarning": "CONTENT_WARNING_NSFW",
+        "sources": [
+          {
+            "id": "1254776522681154504",
+            "name": "HentaiThai-SeFree",
+            "language": "th",
+            "homeUrl": "https://www.hentaithai.net"
+          }
+        ]
+      },
+      {
+        "name": "Miku-Doujin-SeFree",
+        "packageName": "eu.kanade.tachiyomi.extension.th.mikudoujinsefree",
+        "resources": {
+          "apkUrl": "https://raw.githubusercontent.com/SeFreeSky/Tachiyomi-SeFree-Repo/repo/tachiyomi-th.mikudoujinsefree-v1.6.5.apk",
+          "iconUrl": "https://raw.githubusercontent.com/SeFreeSky/Tachiyomi-SeFree-Repo/main/core/src/main/res/mipmap-xhdpi/ic_launcher.png",
+          "jarUrl": "https://raw.githubusercontent.com/SeFreeSky/Tachiyomi-SeFree-Repo/repo/tachiyomi-th.mikudoujinsefree-v1.6.5.jar"
+        },
+        "extensionLib": "1.6",
+        "versionCode": "5",
+        "versionName": "1.6.5",
+        "contentWarning": "CONTENT_WARNING_NSFW",
+        "sources": [
+          {
+            "id": "4697634388694676355",
+            "name": "Miku-Doujin-SeFree",
+            "language": "th",
+            "homeUrl": "https://miku-doujin.com"
+          }
+        ]
+      },
+      {
+        "name": "Nekopost-SeFree",
+        "packageName": "eu.kanade.tachiyomi.extension.th.nekopostsefree",
+        "resources": {
+          "apkUrl": "https://raw.githubusercontent.com/SeFreeSky/Tachiyomi-SeFree-Repo/repo/tachiyomi-th.nekopostsefree-v1.6.13.apk",
+          "iconUrl": "https://raw.githubusercontent.com/SeFreeSky/Tachiyomi-SeFree-Repo/main/core/src/main/res/mipmap-xhdpi/ic_launcher.png"
+        },
+        "extensionLib": "1.6",
+        "versionCode": "13",
+        "versionName": "1.6.13",
+        "contentWarning": "CONTENT_WARNING_NSFW",
+        "sources": [
+          {
+            "id": "8845716904246640248",
+            "name": "Nekopost-SeFree",
+            "language": "th",
+            "homeUrl": "https://www.nekopost.net"
+          }
+        ]
+      },
+      {
+        "name": "Niceoppai-SeFree",
+        "packageName": "eu.kanade.tachiyomi.extension.th.niceoppaisefree",
+        "resources": {
+          "apkUrl": "https://raw.githubusercontent.com/SeFreeSky/Tachiyomi-SeFree-Repo/repo/tachiyomi-th.niceoppaisefree-v1.6.2.apk",
+          "iconUrl": "https://raw.githubusercontent.com/SeFreeSky/Tachiyomi-SeFree-Repo/main/core/src/main/res/mipmap-xhdpi/ic_launcher.png",
+          "jarUrl": "https://raw.githubusercontent.com/SeFreeSky/Tachiyomi-SeFree-Repo/repo/tachiyomi-th.niceoppaisefree-v1.6.2.jar"
+        },
+        "extensionLib": "1.6",
+        "versionCode": "2",
+        "versionName": "1.6.2",
+        "contentWarning": "CONTENT_WARNING_MIXED",
+        "sources": [
+          {
+            "id": "5108709005324083500",
+            "name": "Niceoppai-SeFree",
+            "language": "th",
+            "homeUrl": "https://www.niceoppai.net"
+          }
+        ]
+      },
+      {
+        "name": "Rom-Manga-SeFree",
+        "packageName": "eu.kanade.tachiyomi.extension.th.rommangasefree",
+        "resources": {
+          "apkUrl": "https://raw.githubusercontent.com/SeFreeSky/Tachiyomi-SeFree-Repo/repo/tachiyomi-th.rommangasefree-v1.6.6.apk",
+          "iconUrl": "https://raw.githubusercontent.com/SeFreeSky/Tachiyomi-SeFree-Repo/main/core/src/main/res/mipmap-xhdpi/ic_launcher.png",
+          "jarUrl": "https://raw.githubusercontent.com/SeFreeSky/Tachiyomi-SeFree-Repo/repo/tachiyomi-th.rommangasefree-v1.6.6.jar"
+        },
+        "extensionLib": "1.6",
+        "versionCode": "6",
+        "versionName": "1.6.6",
+        "contentWarning": "CONTENT_WARNING_NSFW",
+        "sources": [
+          {
+            "id": "2450486442176949938",
+            "name": "Rom-Manga-SeFree",
+            "language": "th",
+            "homeUrl": "https://www.rom-manga.com"
+          }
+        ]
+      }
+    ]
+  }
+}
