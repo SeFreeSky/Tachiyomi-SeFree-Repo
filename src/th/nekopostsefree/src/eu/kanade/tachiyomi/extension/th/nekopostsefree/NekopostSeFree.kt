@@ -1,5 +1,6 @@
 package eu.kanade.tachiyomi.extension.th.nekopostsefree
 
+import android.util.Log
 import eu.kanade.tachiyomi.network.GET
 import eu.kanade.tachiyomi.network.POST
 import eu.kanade.tachiyomi.source.model.Filter
@@ -183,6 +184,7 @@ abstract class NekopostSeFree : KeiSource() {
     override suspend fun getPageList(chapter: SChapter): List<Page> {
         // osemocphoto is migrating chapters from www. -> fs.; each chapter's manifest
         // and images live on ONE host right now, the other returns a placeholder JPEG.
+        Log.d(TAG, "getPageList chapter.url=${chapter.url}")
         val hosts = listOf("https://www.osemocphoto.com", "https://fs.osemocphoto.com")
         for (host in hosts) {
             val body = try {
@@ -191,14 +193,34 @@ abstract class NekopostSeFree : KeiSource() {
                 continue
             }
             if (body.isBlank() || !body.startsWith("{")) continue
-            runCatching {
+            val pages = runCatching {
                 val info = json.decodeFromString<RawChapterInfo>(body)
                 val base = "$host/collectManga/${info.projectId}/${info.chapterId}"
-                return info.pageItem.mapIndexed { index, page ->
+                val hostLit = host.substringAfter("//")
+                val withPageName = info.pageItem.firstOrNull()?.pageName != null
+                Log.d(TAG, "manifest host=$hostLit pages=${info.pageItem.size} pageNamePresent=$withPageName")
+                info.pageItem.mapIndexed { index, page ->
                     Page(index = index, imageUrl = "$base/${page.pageName ?: page.fileName}")
                 }
+            }.getOrNull()
+            if (pages != null) {
+                pages.firstOrNull()?.imageUrl?.let { first ->
+                    try {
+                        val ir = client.newCall(GET(first, headers)).execute()
+                        ir.use {
+                            val head = it.peekBody(96).string().take(24).replace('\n', ' ').replace('\r', ' ')
+                            val ct = it.header("Content-Type").orEmpty()
+                            val len = it.body?.contentLength() ?: -1
+                            Log.d(TAG, "imgProbe code=${it.code} ct=$ct len=$len head0=$head")
+                        }
+                    } catch (e: Exception) {
+                        Log.d(TAG, "imgProbe EXC ${e.javaClass.simpleName}: ${e.message?.take(120)}")
+                    }
+                }
+                return pages
             }
         }
+        Log.d(TAG, "getPageList EMPTY")
         return emptyList()
     }
 
@@ -352,6 +374,7 @@ abstract class NekopostSeFree : KeiSource() {
     private inline fun <reified T> parse(resp: Response): T = json.decodeFromString<T>(resp.body?.string().orEmpty())
 
     companion object {
+        private const val TAG = "NekopostSeFree"
         private const val POPULAR_PAGE_SIZE = 15
         private const val LATEST_PAGE_SIZE = 15
         private const val SEARCH_PAGE_SIZE = 100
