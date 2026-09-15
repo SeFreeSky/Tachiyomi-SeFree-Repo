@@ -164,16 +164,23 @@ abstract class NekopostSeFree : KeiSource() {
             manga
         }
 
+        val rawChapters = info.projectInfo.chapter.orEmpty()
+        Log.d(TAG, "fetchMangaUpdate pid=$pid rawChapters=${rawChapters.size} fetchDetails=$fetchDetails fetchChapters=$fetchChapters")
+
         val fetched = if (fetchChapters) {
-            info.projectInfo.chapter.orEmpty().map {
-                SChapter.create().apply {
-                    url = "${p.projectId}/${it.chapterId}/${p.projectId}_${it.chapterId}.json"
-                    name = sanitizeChapterName(it.chapterName)
-                    chapter_number = it.chapterNo.toFloat()
-                    date_upload = dateFormat.parse(it.publishDate.value)?.time ?: 0L
-                    scanlator = it.providerName
-                }
-            }
+            rawChapters.mapNotNull { ch ->
+                runCatching {
+                    SChapter.create().apply {
+                        url = "${p.projectId}/${ch.chapterId}/${p.projectId}_${ch.chapterId}.json"
+                        name = sanitizeChapterName(ch.chapterName)
+                        chapter_number = ch.chapterNo.toFloat()
+                        date_upload = dateFormat.parse(ch.publishDate.value)?.time ?: 0L
+                        scanlator = ch.providerName
+                    }
+                }.onFailure { e ->
+                    Log.d(TAG, "ch skip id=${ch.chapterId} ${e.javaClass.simpleName}: ${e.message?.take(100)}")
+                }.getOrNull()
+            }.also { Log.d(TAG, "fetchMangaUpdate -> chapters=${it.size}") }
         } else {
             chapters
         }
