@@ -6,7 +6,7 @@ plugins {
 
 keiyoushi {
     name = "Nekopost-SeFree"
-    versionCode = 15
+    versionCode = 16
     contentWarning = ContentWarning.NSFW
     libVersion = "1.6"
 

@@ -22,7 +22,9 @@ import okhttp3.MediaType.Companion.toMediaType
 import okhttp3.RequestBody.Companion.toRequestBody
 import okhttp3.Response
 import java.text.SimpleDateFormat
+import java.util.Calendar
 import java.util.Locale
+import java.util.TimeZone
 
 @Source
 abstract class NekopostSeFree : KeiSource() {
@@ -39,6 +41,12 @@ abstract class NekopostSeFree : KeiSource() {
     private val fileHost = "https://www.osemocphoto.com"
 
     private val dateFormat by lazy { SimpleDateFormat("yyyy-MM-dd HH:mm:ss", Locale("th")) }
+
+    // Newer chapters publish an ISO-8601 timestamp (…T…Z); older chapters use the space
+    // format above. Try both so a date-shape change can't drop the whole chapter list.
+    private val dateFormatIso by lazy {
+        SimpleDateFormat("yyyy-MM-dd'T'HH:mm:ss'Z'", Locale.US).apply { timeZone = TimeZone.getTimeZone("UTC") }
+    }
 
     private val apiHeaders = headersBuilder()
         .set("Accept", "*/*")
@@ -174,7 +182,7 @@ abstract class NekopostSeFree : KeiSource() {
                         url = "${p.projectId}/${ch.chapterId}/${p.projectId}_${ch.chapterId}.json"
                         name = sanitizeChapterName(ch.chapterName)
                         chapter_number = ch.chapterNo.toFloat()
-                        date_upload = dateFormat.parse(ch.publishDate.value)?.time ?: 0L
+                        date_upload = parsePublishDate(ch.publishDate.value)
                         scanlator = ch.providerName
                     }
                 }.onFailure { e ->
@@ -376,6 +384,16 @@ abstract class NekopostSeFree : KeiSource() {
         val req = POST("$baseUrl$path", apiHeaders, requestBody)
         val resp = client.newCall(req).execute()
         resp.use { return block(it) }
+    }
+
+    /** Old chapters use "yyyy-MM-dd HH:mm:ss", newer use ISO-8601 "…T…Z". Try both. */
+    private fun parsePublishDate(value: String): Long {
+        val space = runCatching { dateFormat.parse(value)?.time }.getOrNull()
+        val ms = space ?: runCatching { dateFormatIso.parse(value)?.time }.getOrNull() ?: 0L
+        // Guard against Buddhist-era years (BE = CE + 543).
+        val cal = Calendar.getInstance().apply { this.timeInMillis = ms }
+        if (cal.get(Calendar.YEAR) > 2500) cal.add(Calendar.YEAR, -543)
+        return cal.timeInMillis
     }
 
     private inline fun <reified T> parse(resp: Response): T = json.decodeFromString<T>(resp.body?.string().orEmpty())
