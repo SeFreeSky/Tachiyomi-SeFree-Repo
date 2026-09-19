@@ -106,15 +106,31 @@ abstract class InuMangaSeFree : KeiSource() {
 
     override suspend fun getPageList(chapter: SChapter): List<Page> {
         val html = client.newCall(GET(baseUrl + chapter.url, headers)).execute().use { it.body?.string().orEmpty() }
+        Log.d(TAG, "getPageList url=${chapter.url} len=${html.length}")
         val jsonText = extractBalancedJson(html, "ts_reader.run(")
         val images = jsonText?.let {
             runCatching { json.decodeFromString<TsReader>(it).sources.flatMap { s -> s.images } }.getOrNull()
         }.orEmpty()
-        return if (images.isEmpty()) {
+        Log.d(TAG, "hasTsReader=${jsonText != null} images=${images.size} firsts=${images.take(3)}")
+        val pages = if (images.isEmpty()) {
             Jsoup.parse(html).select("img[src*=img.inu-manga]").mapIndexed { i, img -> Page(i, img.attr("abs:src")) }
         } else {
             images.mapIndexed { i, url -> Page(i, normalizeImageHost(url)) }
         }
+        pages.firstOrNull()?.imageUrl?.let { first ->
+            try {
+                val ir = client.newCall(GET(first, headers)).execute()
+                ir.use {
+                    val head = it.peekBody(96).string().take(24).replace('\n', ' ').replace('\r', ' ')
+                    val ct = it.header("Content-Type").orEmpty()
+                    val len = it.body?.contentLength() ?: -1
+                    Log.d(TAG, "imgProbe code=${it.code} ct=$ct len=$len head0=$head")
+                }
+            } catch (e: Exception) {
+                Log.d(TAG, "imgProbe EXC ${e.javaClass.simpleName}: ${e.message?.take(120)}")
+            }
+        }
+        return pages
     }
 
     override fun getFilterList(data: JsonElement?): FilterList = FilterList()
