@@ -45,7 +45,8 @@ abstract class InuMangaSeFree : KeiSource() {
     override suspend fun getLatestUpdates(page: Int): MangasPage = fetchMangasPage(GET("$baseUrl/manga/?order=update&page=$page", headers))
 
     override suspend fun getSearchMangaList(page: Int, query: String, filters: FilterList): MangasPage {
-        val url = "$baseUrl/?s=${URLEncoder.encode(query, "UTF-8")}&page=$page"
+        // Bare /?s= times out server-side; wp-manga post_type returns the grid fast.
+        val url = "$baseUrl/?s=${URLEncoder.encode(query, "UTF-8")}&post_type=wp-manga&page=$page"
         return fetchMangasPage(GET(url, headers))
     }
 
