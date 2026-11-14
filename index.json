@@ -74,13 +74,13 @@
         "name": "Nekopost-SeFree",
         "packageName": "eu.kanade.tachiyomi.extension.th.nekopostsefree",
         "resources": {
-          "apkUrl": "https://raw.githubusercontent.com/SeFreeSky/Tachiyomi-SeFree-Repo/repo/tachiyomi-th.nekopostsefree-v1.6.16.apk",
+          "apkUrl": "https://raw.githubusercontent.com/SeFreeSky/Tachiyomi-SeFree-Repo/repo/tachiyomi-th.nekopostsefree-v1.6.17.apk",
           "iconUrl": "https://raw.githubusercontent.com/SeFreeSky/Tachiyomi-SeFree-Repo/main/core/src/main/res/mipmap-xhdpi/ic_launcher.png",
-          "jarUrl": "https://raw.githubusercontent.com/SeFreeSky/Tachiyomi-SeFree-Repo/repo/tachiyomi-th.nekopostsefree-v1.6.16.jar"
+          "jarUrl": "https://raw.githubusercontent.com/SeFreeSky/Tachiyomi-SeFree-Repo/repo/tachiyomi-th.nekopostsefree-v1.6.17.jar"
         },
         "extensionLib": "1.6",
-        "versionCode": "16",
-        "versionName": "1.6.16",
+        "versionCode": "17",
+        "versionName": "1.6.17",
         "contentWarning": "CONTENT_WARNING_NSFW",
         "sources": [
           {
