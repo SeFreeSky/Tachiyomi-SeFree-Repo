@@ -18,13 +18,20 @@ import kotlinx.serialization.decodeFromString
 import kotlinx.serialization.encodeToString
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.JsonElement
+import kotlinx.serialization.json.contentOrNull
+import kotlinx.serialization.json.jsonPrimitive
 import okhttp3.MediaType.Companion.toMediaType
 import okhttp3.RequestBody.Companion.toRequestBody
 import okhttp3.Response
+import okio.ByteString.Companion.decodeBase64
+import java.security.MessageDigest
 import java.text.SimpleDateFormat
 import java.util.Calendar
 import java.util.Locale
 import java.util.TimeZone
+import javax.crypto.Cipher
+import javax.crypto.spec.IvParameterSpec
+import javax.crypto.spec.SecretKeySpec
 
 @Source
 abstract class NekopostSeFree : KeiSource() {
@@ -38,6 +45,7 @@ abstract class NekopostSeFree : KeiSource() {
     override fun getChapterUrl(chapter: SChapter): String = "$baseUrl/manga/${chapter.url.substringBefore("/")}/${chapter.chapter_number.toString().removeSuffix(".0")}"
 
     private val projectDataEndpoint = "/api/project/detail2"
+    private val cinfoEndpoint = "/api/handler/cinfo"
     private val fileHost = "https://www.osemocphoto.com"
 
     private val dateFormat by lazy { SimpleDateFormat("yyyy-MM-dd HH:mm:ss", Locale("th")) }
@@ -197,10 +205,76 @@ abstract class NekopostSeFree : KeiSource() {
     }
 
     override suspend fun getPageList(chapter: SChapter): List<Page> {
+        // Site change (Nov 2026): the chapter manifest at
+        // osemocphoto.com/collectManga/<pid>/<chid>/<pid>_<chid>.json is now WAF-blocked (403).
+        // Pages come from nekopost.net/api/handler/cinfo instead: POST {p,c} -> AES-encrypted
+        // JSON whose pageItem[] carries SIGNED image urls (?verify=<ts>-<sig>).
+        Log.d(TAG, "getPageList chapter.url=${chapter.url}")
+        val parts = chapter.url.split("/")
+        val pid = parts.getOrNull(0)?.toIntOrNull()
+        val cid = parts.getOrNull(1)?.toIntOrNull()
+        if (pid != null && cid != null) {
+            val pages = runCatching { cinfoPages(pid, cid) }
+                .onFailure { e -> Log.d(TAG, "cinfo FAILED ${e.javaClass.simpleName}: ${e.message?.take(140)}") }
+                .getOrNull()
+            if (!pages.isNullOrEmpty()) return pages
+        }
+        return legacyManifestPages(chapter)
+    }
+
+    private suspend fun cinfoPages(pid: Int, cid: Int): List<Page> {
+        val body = json.encodeToString(CinfoRequest(pid, cid)).toRequestBody(jsonMedia)
+        val payload = post(cinfoEndpoint, body) { resp -> resp.body?.string().orEmpty() }
+        val info = json.decodeFromString<RawCinfo>(decryptCinfo(payload))
+        val items = info.pageItem.orEmpty()
+        Log.d(TAG, "cinfo pid=$pid cid=$cid raw=${payload.take(16)}… pages=${items.size}")
+        val base = "$fileHost/collectManga/$pid/$cid/"
+        return items.sortedBy { it.sortIndex() }.mapIndexed { index, item ->
+            val name = item.pageName?.takeIf(String::isNotBlank) ?: item.fileName.orEmpty()
+            Page(index = index, imageUrl = if (name.startsWith("http")) name else base + name)
+        }
+    }
+
+    /**
+     * cinfo payload is CryptoJS.AES.encrypt(json, "AeyTest") — i.e. OpenSSL "Salted__" base64
+     * with MD5 EVP_BytesToKey (key 32B, iv 16B) and AES-256-CBC.
+     */
+    private fun decryptCinfo(encoded: String): String {
+        val raw = encoded.trim().decodeBase64()?.toByteArray()
+            ?: throw IllegalArgumentException("cinfo payload is not base64")
+        require(raw.size > 32 && String(raw, 0, 8, Charsets.US_ASCII) == "Salted__") { "unexpected cinfo payload" }
+        val salt = raw.copyOfRange(8, 16)
+        val data = raw.copyOfRange(16, raw.size)
+        val pass = CINFO_PASSPHRASE.toByteArray(Charsets.UTF_8)
+        val keyIv = ByteArray(48)
+        val md = MessageDigest.getInstance("MD5")
+        var prev = ByteArray(0)
+        var done = 0
+        while (done < keyIv.size) {
+            md.reset()
+            md.update(prev)
+            md.update(pass)
+            md.update(salt)
+            prev = md.digest()
+            val n = minOf(prev.size, keyIv.size - done)
+            prev.copyInto(keyIv, done, 0, n)
+            done += n
+        }
+        val cipher = Cipher.getInstance("AES/CBC/PKCS5Padding")
+        cipher.init(
+            Cipher.DECRYPT_MODE,
+            SecretKeySpec(keyIv, 0, 32, "AES"),
+            IvParameterSpec(keyIv, 32, 16),
+        )
+        return String(cipher.doFinal(data), Charsets.UTF_8)
+    }
+
+    /** Pre-Nov-2026 path: manifest json on www/fs osemocphoto (kept as a fallback). */
+    private suspend fun legacyManifestPages(chapter: SChapter): List<Page> {
         // osemocphoto is migrating chapters from www. -> fs.; each chapter's manifest
         // and images live on ONE host right now, the other returns a placeholder JPEG.
-        Log.d(TAG, "getPageList chapter.url=${chapter.url}")
         val hosts = listOf("https://www.osemocphoto.com", "https://fs.osemocphoto.com")
+
         for (host in hosts) {
             val body = try {
                 client.newCall(GET("$host/collectManga/${chapter.url}", headers)).execute().use { it.body?.string().orEmpty() }
@@ -410,6 +484,9 @@ abstract class NekopostSeFree : KeiSource() {
         // So cap by UTF-8 byte length and strip filesystem-hostile chars.
         private const val MAX_CHAPTER_BYTES = 80
         private const val COVER_PLACEHOLDER_LEN = 24375L
+
+        // Passphrase the site's reader uses for CryptoJS.AES.encrypt(json, …) on /api/handler/cinfo.
+        private const val CINFO_PASSPHRASE = "AeyTest"
         private val json = Json {
             ignoreUnknownKeys = true
             coerceInputValues = true
@@ -452,6 +529,28 @@ internal data class UpdatesRequest(val type: String, val paging: PagingInfo)
 
 @Serializable
 internal data class ProjectRequestBody(val pid: Int)
+
+@Serializable
+internal data class CinfoRequest(
+    @SerialName("p") val projectId: Int,
+    @SerialName("c") val chapterId: Int,
+)
+
+@Serializable
+internal data class RawCinfo(
+    @SerialName("pageItem") val pageItem: List<RawCinfoPage>? = null,
+    @SerialName("pageCount") val pageCount: Int? = null,
+)
+
+@Serializable
+internal data class RawCinfoPage(
+    @SerialName("pageName") val pageName: String? = null,
+    @SerialName("fileName") val fileName: String? = null,
+    // pageNo is a STRING in current responses but an INT in some older manifests — never type it.
+    @SerialName("pageNo") val pageNo: JsonElement? = null,
+) {
+    fun sortIndex(): Int = pageNo?.jsonPrimitive?.contentOrNull?.toDoubleOrNull()?.toInt() ?: Int.MAX_VALUE
+}
 
 @Serializable
 internal data class RawProjectSearchSummaryList(val listProject: List<RawProjectSearchSummary>? = null)
